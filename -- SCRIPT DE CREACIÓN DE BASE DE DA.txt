@@ -1,0 +1,763 @@
+-- SCRIPT DE CREACIÓN DE BASE DE DATOS Y ESTRUCTURA
+-- SISTEMA DE GESTIÓN DE COMPRAS E INVENTARIO
+
+-- 1. Creación de la base de datos
+-- Si la base de datos 'sistema_compras' existe, se elimina para crearla nuevamente.
+DROP DATABASE IF EXISTS sistema_compras;
+CREATE DATABASE sistema_compras;
+USE sistema_compras;
+
+-- 2. Creación de Tablas
+
+-- Tabla: rol
+-- Almacena los roles de usuario (ej. Administrador, Gerente, Almacén)
+CREATE TABLE rol (
+    id_rol INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(50) NOT NULL UNIQUE,
+    descripcion VARCHAR(100),
+    activo BOOLEAN DEFAULT TRUE
+);
+
+-- Tabla: usuario
+-- Almacena la información de los usuarios del sistema.
+CREATE TABLE usuario (
+    id_usuario INT AUTO_INCREMENT PRIMARY KEY,
+    id_rol INT NOT NULL,
+    nombre VARCHAR(100) NOT NULL,
+    tipo_documento VARCHAR(20) DEFAULT 'DNI',
+    num_documento VARCHAR(20) UNIQUE,
+    direccion VARCHAR(150),
+    telefono VARCHAR(20),
+    email VARCHAR(100) UNIQUE,
+    clave VARCHAR(256) NOT NULL,
+    activo BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (id_rol) REFERENCES rol(id_rol)
+);
+
+-- Tabla: proveedor
+-- Almacena la información de los proveedores.
+CREATE TABLE proveedor (
+    id_proveedor INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    tipo_documento VARCHAR(20) NOT NULL,
+    numero_documento VARCHAR(20) NOT NULL,
+    telefono VARCHAR(20),
+    email VARCHAR(100),
+    direccion VARCHAR(200),
+    activo BOOLEAN DEFAULT TRUE
+);
+
+-- Tabla: categoria
+-- Almacena las categorías de artículos (ej. Electrónicos, Limpieza).
+CREATE TABLE categoria (
+    id_categoria INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(50) NOT NULL UNIQUE,
+    descripcion VARCHAR(200),
+    activo BOOLEAN DEFAULT TRUE
+);
+
+-- Tabla: articulo
+-- Almacena el catálogo de productos o artículos.
+CREATE TABLE articulo (
+    id_articulo INT AUTO_INCREMENT PRIMARY KEY,
+    codigo VARCHAR(20) UNIQUE,
+    nombre VARCHAR(100) NOT NULL,
+    descripcion VARCHAR(200),
+    precio_venta DECIMAL(12,2) NOT NULL,
+    stock INT NOT NULL DEFAULT 0,
+    id_categoria INT,
+    id_proveedor INT,
+    activo BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (id_categoria) REFERENCES categoria(id_categoria),
+    FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor)
+);
+
+-- Tabla: presupuesto_compras
+-- Almacena la información de los presupuestos de compras.
+CREATE TABLE presupuesto_compras (
+    id_presupuesto INT AUTO_INCREMENT PRIMARY KEY,
+    codigo VARCHAR(20) UNIQUE,
+    descripcion VARCHAR(255),
+    monto_presupuestado DECIMAL(12,2) NOT NULL,
+    estado VARCHAR(50),
+    fecha_inicio DATE,
+    fecha_fin DATE,
+    id_usuario INT,
+    activo BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+);
+
+-- Tabla: orden_compra
+-- Almacena las cabeceras de las órdenes de compra.
+CREATE TABLE orden_compra (
+    id_orden INT AUTO_INCREMENT PRIMARY KEY,
+    id_usuario INT NOT NULL,
+    id_proveedor INT NOT NULL,
+    id_presupuesto INT,
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    estado ENUM('PENDIENTE','PARCIAL','COMPLETADA') DEFAULT 'PENDIENTE',
+    monto_total DECIMAL(12,2) DEFAULT 0,
+    igv DECIMAL(12,2) DEFAULT 0,
+    observaciones TEXT,
+    FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
+    FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor),
+    FOREIGN KEY (id_presupuesto) REFERENCES presupuesto_compras(id_presupuesto)
+);
+
+-- Tabla: detalle_orden
+-- Almacena los artículos de cada orden de compra.
+CREATE TABLE detalle_orden (
+    id_detalle INT AUTO_INCREMENT PRIMARY KEY,
+    id_orden INT NOT NULL,
+    id_articulo INT NOT NULL,
+    cantidad INT NOT NULL,
+    precio_unitario DECIMAL(12,2) NOT NULL,
+    subtotal DECIMAL(12,2) GENERATED ALWAYS AS (cantidad * precio_unitario) STORED,
+    FOREIGN KEY (id_orden) REFERENCES orden_compra(id_orden),
+    FOREIGN KEY (id_articulo) REFERENCES articulo(id_articulo)
+);
+
+-- Tabla: recepcion
+-- Almacena la información de la recepción de mercancía.
+CREATE TABLE recepcion (
+    id_recepcion INT AUTO_INCREMENT PRIMARY KEY,
+    id_orden INT NOT NULL,
+    id_usuario INT,
+    fecha_recepcion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    observaciones TEXT,
+    estado ENUM('PENDIENTE','PARCIAL','COMPLETADA') DEFAULT 'PENDIENTE',
+    FOREIGN KEY (id_orden) REFERENCES orden_compra(id_orden),
+    FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+);
+
+-- Tabla: detalle_recepcion
+-- Almacena los detalles de los artículos recibidos.
+CREATE TABLE detalle_recepcion (
+    id_detalle_recepcion INT AUTO_INCREMENT PRIMARY KEY,
+    id_recepcion INT NOT NULL,
+    id_articulo INT NOT NULL,
+    cantidad_recibida INT NOT NULL,
+    costo_unitario DECIMAL(12,2),
+    lote VARCHAR(50),
+    fecha_vencimiento DATE,
+    FOREIGN KEY (id_recepcion) REFERENCES recepcion(id_recepcion),
+    FOREIGN KEY (id_articulo) REFERENCES articulo(id_articulo)
+);
+
+-- Tabla: movimiento_inventario
+-- Registra los movimientos de entrada y salida de stock.
+CREATE TABLE movimiento_inventario (
+    id_movimiento INT AUTO_INCREMENT PRIMARY KEY,
+    articulo_id INT NOT NULL,
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tipo_movimiento ENUM('ENTRADA','SALIDA','AJUSTE') NOT NULL,
+    cantidad INT NOT NULL,
+    stock_anterior INT NOT NULL,
+    stock_actual INT NOT NULL,
+    observaciones TEXT,
+    id_usuario INT,
+    referencia VARCHAR(50),
+    FOREIGN KEY (articulo_id) REFERENCES articulo(id_articulo),
+    FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+);
+
+-- Tabla: auditoria
+-- Registra los cambios importantes en el sistema.
+CREATE TABLE auditoria (
+    id_auditoria INT AUTO_INCREMENT PRIMARY KEY,
+    id_usuario INT,
+    tabla_afectada VARCHAR(50),
+    accion ENUM('INSERT','UPDATE','DELETE'),
+    registro_afectado INT,
+    valores_anteriores TEXT,
+    valores_nuevos TEXT,
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ip VARCHAR(50),
+    FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+);
+
+-- 3. Inserción de Datos de Ejemplo
+
+-- Roles
+INSERT INTO rol (nombre, descripcion) VALUES
+('Administrador', 'Acceso completo al sistema'),
+('Gerente', 'Gestión de todas las áreas'),
+('Almacén', 'Gestión de inventario y recepciones'),
+('Compras', 'Gestión de órdenes de compra'),
+('Ventas', 'Gestión de clientes y ventas');
+
+-- Usuarios
+INSERT INTO usuario (id_rol, nombre, tipo_documento, num_documento, direccion, telefono, email, clave) VALUES
+(1, 'Admin Principal', 'DNI', '12345678', 'Av. Central 123, Lima', '999888777', 'admin@sistema.com', SHA2('Admin123', 256)),
+(2, 'Juan Pérez', 'DNI', '87654321', 'Calle Los Incas 456, Lima', '987654321', 'jperez@sistema.com', SHA2('Gerente123', 256)),
+(3, 'María Gómez', 'DNI', '11222333', 'Av. Panamericana Sur Km 10, Lima', '966555444', 'mgomez@sistema.com', SHA2('Almacen123', 256)),
+(4, 'Carlos Ruiz', 'DNI', '44555666', 'Jr. Amazonas 789, Callao', '955444333', 'cruiz@sistema.com', SHA2('Compras123', 256)),
+(5, 'Laura Díaz', 'DNI', '77888999', 'Av. El Sol 101, Miraflores', '944333222', 'ldiaz@sistema.com', SHA2('Ventas123', 256)),
+(1, 'Roberto Silva', 'DNI', '22333444', 'Av. La Marina 2345, San Miguel', '933222111', 'rsilva@sistema.com', SHA2('Admin456', 256)),
+(3, 'Carmen Vega', 'DNI', '55666777', 'Jr. Lima 321, Centro', '922111000', 'cvega@sistema.com', SHA2('Almacen456', 256)),
+(4, 'Miguel Torres', 'DNI', '88999000', 'Av. Brasil 987, Breña', '911000999', 'mtorres@sistema.com', SHA2('Compras456', 256));
+
+-- Proveedores
+INSERT INTO proveedor (nombre, tipo_documento, numero_documento, telefono, email, direccion) VALUES
+('TecnoImport S.A.', 'RUC', '20123456781', '987654321', 'ventas@tecnoimport.com', 'Av. Industrial 123, Lima'),
+('OficinaTotal EIRL', 'RUC', '20555667781', '987123456', 'contacto@oficina.com', 'Calle Los Pinos 456, Lima'),
+('Limpieza Profesional SAC', 'RUC', '20999888771', '987654123', 'info@limpieza.com', 'Av. La Marina 789, Lima'),
+('ElectroParts SAC', 'RUC', '20333444551', '987123789', 'ventas@electroparts.com', 'Av. Argentina 321, Callao'),
+('Muebles Modernos S.A.C.', 'RUC', '20888999001', '955443322', 'contacto@mueblesmodernos.com', 'Av. La Paz 500, Miraflores'),
+('Insumos Eléctricos del Norte', 'RUC', '20777666551', '944556677', 'ventas@insumoselnorte.com', 'Carretera Panamericana Km 10, Trujillo'),
+('Papelería Express', 'RUC', '20666555441', '933445566', 'info@papeleriaexpress.com', 'Jr. Unión 800, Cusco'),
+('TecnoSoluciones SAC', 'RUC', '20444555661', '922334455', 'ventas@tecnosoluciones.com', 'Av. Javier Prado 1500, San Isidro'),
+('Seguridad Total EIRL', 'RUC', '20111222331', '911223344', 'ventas@seguridadtotal.com', 'Av. Tacna 789, Lima Centro'),
+('Alimentos Andinos SAC', 'RUC', '20222333441', '900112233', 'compras@alimentosandinos.com', 'Av. La Molina 2345, La Molina');
+
+-- Categorías
+INSERT INTO categoria (nombre, descripcion) VALUES
+('Electrónicos', 'Dispositivos electrónicos y accesorios'),
+('Oficina', 'Artículos de oficina y papelería'),
+('Limpieza', 'Productos de limpieza y mantenimiento'),
+('Hardware', 'Componentes de computadora'),
+('Mobiliario', 'Muebles de oficina'),
+('Seguridad Industrial', 'Equipos de protección y seguridad laboral'),
+('Consumibles', 'Cartuchos de tinta y toners'),
+('Alimentos', 'Productos alimenticios y snacks'),
+('Bebidas', 'Bebidas y refrescos para oficina'),
+('Material Escritorio', 'Materiales de escritorio y organización');
+
+-- Artículos
+INSERT INTO articulo (codigo, nombre, descripcion, precio_venta, stock, id_categoria, id_proveedor) VALUES
+('TEC001', 'Laptop HP 15-dw102la', 'Laptop HP 15.6", Intel Core i5, 8GB RAM, 512GB SSD', 2599.00, 0, 1, 1),
+('TEC002', 'Mouse Inalámbrico Logitech', 'Mouse óptico inalámbrico, 1600DPI, color negro', 59.90, 0, 1, 1),
+('TEC003', 'Monitor Samsung 27"', 'Monitor curvo de 27", Full HD, 75Hz', 850.00, 0, 1, 1),
+('TEC004', 'Teclado Mecánico RGB', 'Teclado mecánico gaming con retroiluminación RGB', 120.00, 0, 1, 8),
+('TEC005', 'Impresora Multifuncional', 'Impresora láser multifuncional WiFi', 450.00, 0, 1, 8),
+('OFI001', 'Resma de Papel A4', 'Resma de papel bond A4 80gr, 500 hojas', 25.50, 0, 2, 2),
+('OFI002', 'Folder Manila Tamaño Carta', 'Folder manila con gancho, paquete x 50 unidades', 32.00, 0, 2, 2),
+('OFI003', 'Tóner HP Laserjet', 'Cartucho de tóner compatible con impresoras HP', 120.00, 0, 7, 7),
+('OFI004', 'Bolígrafos Azules Caja x 50', 'Caja de 50 bolígrafos azules de tinta permanente', 15.00, 0, 2, 7),
+('OFI005', 'Calculadora Científica', 'Calculadora científica con 240 funciones', 45.00, 0, 2, 2),
+('LIM001', 'Detergente Líquido 5L', 'Detergente concentrado para pisos, aroma limón', 45.90, 0, 3, 3),
+('LIM002', 'Juego de Toallas', 'Juego de 3 toallas para limpieza, 40x40cm', 18.50, 0, 3, 3),
+('LIM003', 'Desinfectante 4L', 'Desinfectante concentrado multiusos', 38.00, 0, 3, 3),
+('LIM004', 'Escobillón Industrial', 'Escobillón con mango de madera 1.20m', 25.00, 0, 3, 3),
+('HAR001', 'Disco SSD 500GB', 'Disco sólido interno SATA, 500GB, 550MB/s', 189.00, 0, 4, 4),
+('HAR002', 'Memoria RAM 16GB', 'Módulo de memoria RAM DDR4 3200Mhz', 250.00, 0, 4, 4),
+('HAR003', 'Procesador Intel i7', 'Procesador Intel Core i7 11va generación', 350.00, 0, 4, 4),
+('HAR004', 'Tarjeta Gráfica RTX 3060', 'Tarjeta gráfica NVIDIA GeForce RTX 3060 12GB', 450.00, 0, 4, 4),
+('MOB001', 'Silla Ejecutiva', 'Silla ergonómica para oficina, ajustable', 399.00, 0, 5, 5),
+('MOB002', 'Escritorio de Melamina', 'Escritorio de 1.20 x 0.60 m con 2 cajones', 650.00, 0, 5, 5),
+('MOB003', 'Archivador Metálico', 'Archivador de metal 4 cajones con llave', 280.00, 0, 5, 5),
+('MOB004', 'Mesa de Reuniones', 'Mesa para reuniones 2.40 x 1.20 m', 1200.00, 0, 5, 5),
+('SEG001', 'Casco de Seguridad Industrial', 'Casco de polietileno de alta densidad, color amarillo', 45.00, 0, 6, 9),
+('SEG002', 'Guantes de Seguridad', 'Guantes de protección anticorte', 18.00, 0, 6, 9),
+('SEG003', 'Lentes de Seguridad', 'Lentes de protección anti-impacto', 22.00, 0, 6, 9),
+('SEG004', 'Chaleco Reflectante', 'Chaleco de seguridad reflectante talla M', 35.00, 0, 6, 9),
+('ALI001', 'Café Molido 500g', 'Café molido premium, paquete de 500g', 25.00, 0, 8, 10),
+('ALI002', 'Galletas Integrales Caja', 'Caja de galletas integrales x 30 unidades', 18.00, 0, 8, 10),
+('ALI003', 'Snacks Variados', 'Mezcla de snacks saludables 500g', 28.00, 0, 8, 10),
+('BEB001', 'Agua Mineral 500ml x 24', 'Pack de 24 botellas de agua mineral 500ml', 30.00, 0, 9, 10),
+('BEB002', 'Refrescos Variados', 'Variedad de refrescos y gaseosas', 45.00, 0, 9, 10),
+('MAT001', 'Organizador de Escritorio', 'Set organizador para escritorio en acrílico', 55.00, 0, 10, 2),
+('MAT002', 'Pizarra Magnética 90x120', 'Pizarra blanca magnética con rotuladores', 120.00, 0, 10, 2),
+('MAT003', 'Perforadora de 2 hoyos', 'Perforadora de papel capacidad 20 hojas', 28.00, 0, 10, 7);
+
+-- Presupuestos de compras
+INSERT INTO presupuesto_compras (codigo, descripcion, monto_presupuestado, estado, fecha_inicio, fecha_fin, id_usuario, activo) VALUES
+('PR2023-01', 'Presupuesto Enero 2023', 15000.00, 'VENCIDO', '2023-01-01', '2023-01-31', 2, true),
+('PR2023-02', 'Presupuesto Febrero 2023', 12000.00, 'VENCIDO', '2023-02-01', '2023-02-28', 2, true),
+('PR2023-03', 'Presupuesto Marzo 2023', 18000.00, 'VENCIDO', '2023-03-01', '2023-03-31', 2, true),
+('PR2023-04', 'Presupuesto Abril 2023', 20000.00, 'VENCIDO', '2023-04-01', '2023-04-30', 2, true),
+('PR2024-01', 'Presupuesto Enero 2024', 45000.00, 'VENCIDO', '2024-01-01', '2024-01-31', 4, true),
+('PR2024-02', 'Presupuesto Febrero 2024', 42000.00, 'VENCIDO', '2024-02-01', '2024-02-29', 4, true),
+('PR2024-03', 'Presupuesto Marzo 2024', 48000.00, 'Activo', '2024-03-01', '2024-03-31', 4, true),
+('PR2024-04', 'Presupuesto Abril 2024', 50000.00, 'Activo', '2024-04-01', '2024-04-30', 4, true);
+
+-- Órdenes de compra
+INSERT INTO orden_compra (id_usuario, id_proveedor, id_presupuesto, fecha, estado, monto_total, igv, observaciones) VALUES
+(4, 1, 5, '2024-01-15 10:30:00', 'PENDIENTE', 6204.32, 946.42, 'Orden de equipos electrónicos'),
+(4, 2, 5, '2024-01-20 14:45:00', 'PENDIENTE', 1581.20, 241.20, 'Material de oficina'),
+(4, 3, 6, '2024-02-05 09:15:00', 'PENDIENTE', 3363.00, 513.00, 'Productos de limpieza'),
+(4, 4, 6, '2024-02-10 16:20:00', 'PENDIENTE', 2230.20, 340.20, 'Componentes de computadora'),
+(4, 5, 6, '2024-02-20 08:00:00', 'PENDIENTE', 941.64, 143.64, 'Compra de mobiliario para nueva oficina'),
+(4, 6, 6, '2024-02-25 13:30:00', 'PENDIENTE', 531.00, 81.00, 'Compra de artículos de seguridad'),
+(4, 7, 7, '2024-03-01 15:45:00', 'PENDIENTE', 1416.00, 216.00, 'Compra de consumibles para impresión'),
+(4, 1, 7, '2024-03-05 11:15:00', 'PENDIENTE', 10030.00, 1530.00, 'Compra de monitores y laptops'),
+(4, 8, 7, '2024-03-12 14:20:00', 'PENDIENTE', 25124.56, 3832.56, 'Equipos de computación adicionales');
+
+-- Detalles de orden
+INSERT INTO detalle_orden (id_orden, id_articulo, cantidad, precio_unitario) VALUES
+(1, 1, 2, 2599.00), -- Laptop HP
+(1, 2, 1, 59.90), -- Mouse Logitech
+(2, 6, 40, 25.50), -- Resma de Papel A4
+(2, 7, 10, 32.00), -- Folder Manila
+(3, 11, 50, 45.90), -- Detergente Líquido
+(3, 12, 30, 18.50), -- Juego de Toallas
+(4, 15, 10, 189.00), -- Disco SSD
+(5, 19, 2, 399.00), -- Silla Ejecutiva
+(6, 20, 2, 650.00), -- Escritorio de Melamina
+(6, 19, 1, 300.00), -- Silla Ejecutiva (precio ajustado para el ejemplo)
+(7, 23, 10, 45.00), -- Casco de Seguridad
+(8, 11, 25, 45.90), -- Detergente Líquido
+(8, 12, 15, 18.50), -- Juego de Toallas
+(9, 15, 5, 189.00), -- Disco SSD
+(9, 8, 5, 120.00), -- Tóner HP Laserjet
+(9, 1, 3, 2599.00), -- Laptop HP (Añadido a una orden existente)
+(9, 3, 10, 850.00), -- Monitor Samsung (Añadido a una orden existente)
+(9, 4, 10, 120.00), -- Teclado Mecánico (Añadido a una orden existente)
+(9, 5, 5, 450.00);
+
+-- 4. Creación de Vistas (Consultas de Reporte)
+
+-- Vista para mostrar el total de compras por proveedor
+CREATE VIEW vw_compras_por_proveedor AS
+SELECT
+    p.id_proveedor AS ID,
+    p.nombre AS 'Nombre_Proveedor',
+    COUNT(DISTINCT o.id_orden) AS 'Total_Ordenes',
+    SUM(d.cantidad) AS 'Total_Articulos',
+    SUM(d.cantidad * d.precio_unitario) AS 'Monto_Total_Comprado'
+FROM proveedor p
+INNER JOIN orden_compra o ON o.id_proveedor = p.id_proveedor
+INNER JOIN detalle_orden d ON d.id_orden = o.id_orden
+GROUP BY p.id_proveedor, p.nombre
+ORDER BY SUM(d.cantidad * d.precio_unitario) DESC;
+
+-- Vista para mostrar las compras mensuales
+CREATE VIEW vw_compras_mensuales AS
+SELECT
+    YEAR(o.fecha) AS Anio,
+    MONTH(o.fecha) AS MesNumero,
+    CONCAT(
+        CASE MONTH(o.fecha)
+            WHEN 1 THEN 'Enero' WHEN 2 THEN 'Febrero' WHEN 3 THEN 'Marzo'
+            WHEN 4 THEN 'Abril' WHEN 5 THEN 'Mayo' WHEN 6 THEN 'Junio'
+            WHEN 7 THEN 'Julio' WHEN 8 THEN 'Agosto' WHEN 9 THEN 'Septiembre'
+            WHEN 10 THEN 'Octubre' WHEN 11 THEN 'Noviembre' WHEN 12 THEN 'Diciembre'
+        END, ' ', YEAR(o.fecha)
+    ) AS Mes,
+    COUNT(DISTINCT o.id_orden) AS Total_Ordenes,
+    SUM(d.cantidad * d.precio_unitario) AS Total_Comprado,
+    (
+        SELECT o2.estado
+        FROM orden_compra o2
+        WHERE MONTH(o2.fecha) = MONTH(o.fecha)
+            AND YEAR(o2.fecha) = YEAR(o.fecha)
+        GROUP BY o2.estado
+        ORDER BY COUNT(*) DESC
+        LIMIT 1
+    ) AS Estado_Mas_Frecuente
+FROM orden_compra o
+INNER JOIN detalle_orden d ON o.id_orden = d.id_orden
+GROUP BY YEAR(o.fecha), MONTH(o.fecha);
+
+-- Vista para mostrar las órdenes pendientes
+CREATE VIEW vw_ordenes_pendientes AS
+SELECT
+    o.id_orden,
+    o.fecha,
+    p.nombre AS proveedor,
+    o.estado,
+    o.monto_total,
+    COUNT(d.id_detalle) AS cantidad_articulos
+FROM orden_compra o
+JOIN proveedor p ON o.id_proveedor = p.id_proveedor
+JOIN detalle_orden d ON o.id_orden = d.id_orden
+WHERE o.estado IN ('PENDIENTE', 'PARCIAL')
+GROUP BY o.id_orden
+ORDER BY o.fecha DESC;
+
+-- Vista para mostrar las recepciones completas
+CREATE VIEW vw_recepciones_completas AS
+SELECT
+    r.id_recepcion,
+    r.fecha_recepcion,
+    o.id_orden,
+    p.nombre AS proveedor,
+    r.estado,
+    r.observaciones,
+    COUNT(dr.id_detalle_recepcion) AS articulos_recibidos
+FROM recepcion r
+JOIN orden_compra o ON r.id_orden = o.id_orden
+JOIN proveedor p ON o.id_proveedor = p.id_proveedor
+JOIN detalle_recepcion dr ON r.id_recepcion = dr.id_recepcion
+WHERE r.estado = 'COMPLETADA'
+GROUP BY r.id_recepcion;
+
+-- Vista para mostrar el inventario actual
+CREATE VIEW vw_inventario_actual AS
+SELECT
+    a.id_articulo,
+    a.codigo,
+    a.nombre,
+    a.descripcion,
+    c.nombre AS categoria,
+    p.nombre AS proveedor,
+    a.precio_venta,
+    a.stock,
+    a.activo
+FROM articulo a
+JOIN categoria c ON a.id_categoria = c.id_categoria
+JOIN proveedor p ON a.id_proveedor = p.id_proveedor;
+
+-- Vista para el seguimiento de movimientos de inventario
+CREATE VIEW vw_seguimiento_inventario AS
+SELECT
+    m.id_movimiento,
+    m.articulo_id,
+    m.fecha,
+    m.tipo_movimiento,
+    u.nombre AS usuario,
+    a.codigo,
+    a.nombre AS articulo,
+    c.nombre AS categoria,
+    m.stock_anterior,
+    m.cantidad,
+    m.stock_actual,
+    m.observaciones,
+    m.referencia
+FROM movimiento_inventario m
+INNER JOIN usuario u ON m.id_usuario = u.id_usuario
+INNER JOIN articulo a ON m.articulo_id = a.id_articulo
+INNER JOIN categoria c ON a.id_categoria = c.id_categoria
+ORDER BY m.fecha DESC;
+
+-- 5. Creación de Procedimientos Almacenados
+
+DELIMITER $$
+
+-- Procedimiento para registrar una entrada de inventario
+CREATE PROCEDURE sp_registrar_entrada(
+    IN p_articulo_id INT,
+    IN p_cantidad INT,
+    IN p_observaciones TEXT,
+    IN p_usuario_id INT,
+    IN p_referencia VARCHAR(50)
+)
+BEGIN
+    DECLARE v_stock_actual INT DEFAULT 0;
+    DECLARE v_existe INT DEFAULT 0;
+    
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SELECT 'Error al registrar entrada de inventario' AS mensaje;
+    END;
+
+    START TRANSACTION;
+
+    SELECT COUNT(*) INTO v_existe FROM articulo WHERE id_articulo = p_articulo_id;
+    IF v_existe = 0 THEN
+        ROLLBACK;
+        SELECT 'Artículo no existe' AS mensaje;
+    ELSE
+        SELECT stock INTO v_stock_actual FROM articulo WHERE id_articulo = p_articulo_id FOR UPDATE;
+
+        INSERT INTO movimiento_inventario (
+            articulo_id,
+            tipo_movimiento,
+            cantidad,
+            stock_anterior,
+            stock_actual,
+            observaciones,
+            id_usuario,
+            referencia
+        ) VALUES (
+            p_articulo_id,
+            'ENTRADA',
+            p_cantidad,
+            v_stock_actual,
+            v_stock_actual + p_cantidad,
+            p_observaciones,
+            p_usuario_id,
+            p_referencia
+        );
+
+        UPDATE articulo SET stock = stock + p_cantidad WHERE id_articulo = p_articulo_id;
+        COMMIT;
+        SELECT 'OK' AS mensaje;
+    END IF;
+END$$
+
+-- Procedimiento para registrar una salida de inventario
+CREATE PROCEDURE sp_registrar_salida(
+    IN p_articulo_id INT,
+    IN p_cantidad INT,
+    IN p_observaciones TEXT,
+    IN p_usuario_id INT,
+    IN p_referencia VARCHAR(50)
+)
+BEGIN
+    DECLARE v_stock_actual INT DEFAULT 0;
+    DECLARE v_activo BOOLEAN DEFAULT TRUE;
+    DECLARE v_existe INT DEFAULT 0;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SELECT 'Error al registrar salida de inventario' AS mensaje;
+    END;
+
+    START TRANSACTION;
+
+    SELECT COUNT(*) INTO v_existe FROM articulo WHERE id_articulo = p_articulo_id;
+    IF v_existe = 0 THEN
+        ROLLBACK;
+        SELECT 'Artículo no existe' AS mensaje;
+    ELSE
+        SELECT stock, activo INTO v_stock_actual, v_activo FROM articulo WHERE id_articulo = p_articulo_id FOR UPDATE;
+
+        IF NOT v_activo THEN
+            ROLLBACK;
+            SELECT 'Artículo inactivo' AS mensaje;
+        ELSEIF v_stock_actual < p_cantidad THEN
+            ROLLBACK;
+            SELECT CONCAT('Stock insuficiente. Disponible: ', v_stock_actual) AS mensaje;
+        ELSE
+            INSERT INTO movimiento_inventario (
+                articulo_id,
+                tipo_movimiento,
+                cantidad,
+                stock_anterior,
+                stock_actual,
+                observaciones,
+                id_usuario,
+                referencia
+            ) VALUES (
+                p_articulo_id,
+                'SALIDA',
+                p_cantidad,
+                v_stock_actual,
+                v_stock_actual - p_cantidad,
+                p_observaciones,
+                p_usuario_id,
+                p_referencia
+            );
+
+            UPDATE articulo SET stock = stock - p_cantidad WHERE id_articulo = p_articulo_id;
+            COMMIT;
+            SELECT 'OK' AS mensaje;
+        END IF;
+    END IF;
+END$$
+
+-- Procedimiento para registrar una recepción completa o parcial de una orden
+CREATE PROCEDURE sp_realizar_recepcion(
+    IN p_id_orden INT,
+    IN p_id_usuario INT,
+    IN p_observaciones TEXT,
+    IN p_estado VARCHAR(20),
+    IN p_detalles JSON
+)
+BEGIN
+    DECLARE v_id_recepcion INT;
+    DECLARE v_articulo_id INT;
+    DECLARE v_cantidad_recibida INT;
+    DECLARE v_costo_unitario DECIMAL(12,2);
+    DECLARE v_lote VARCHAR(50);
+    DECLARE v_fecha_vencimiento DATE;
+    DECLARE i INT DEFAULT 0;
+    DECLARE v_count INT;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SELECT 'Error en el proceso de recepción' AS mensaje;
+    END;
+
+    START TRANSACTION;
+
+    -- 1. Insertar la recepción en la tabla 'recepcion'
+    INSERT INTO recepcion (id_orden, id_usuario, observaciones, estado)
+    VALUES (p_id_orden, p_id_usuario, p_observaciones, p_estado);
+
+    SET v_id_recepcion = LAST_INSERT_ID();
+
+    SET v_count = JSON_LENGTH(p_detalles);
+
+    -- 2. Recorrer los detalles de la recepción para actualizar el stock por cada artículo
+    WHILE i < v_count DO
+        SET v_articulo_id = JSON_UNQUOTE(JSON_EXTRACT(p_detalles, CONCAT('$[', i, '].id_articulo')));
+        SET v_cantidad_recibida = JSON_UNQUOTE(JSON_EXTRACT(p_detalles, CONCAT('$[', i, '].cantidad_recibida')));
+        SET v_costo_unitario = JSON_UNQUOTE(JSON_EXTRACT(p_detalles, CONCAT('$[', i, '].costo_unitario')));
+        SET v_lote = JSON_UNQUOTE(JSON_EXTRACT(p_detalles, CONCAT('$[', i, '].lote')));
+        SET v_fecha_vencimiento = JSON_UNQUOTE(JSON_EXTRACT(p_detalles, CONCAT('$[', i, '].fecha_vencimiento')));
+
+        -- Insertar los detalles de la recepción en la tabla 'detalle_recepcion'
+        INSERT INTO detalle_recepcion (id_recepcion, id_articulo, cantidad_recibida, costo_unitario, lote, fecha_vencimiento)
+        VALUES (v_id_recepcion, v_articulo_id, v_cantidad_recibida, v_costo_unitario, v_lote, v_fecha_vencimiento);
+
+        -- Llamar al procedimiento que registra la entrada de inventario y actualiza el stock
+        CALL sp_registrar_entrada(
+            v_articulo_id,
+            v_cantidad_recibida,
+            CONCAT('Recepción de la Orden: ', p_id_orden),
+            p_id_usuario,
+            CONCAT('REC-', v_id_recepcion)
+        );
+
+        SET i = i + 1;
+    END WHILE;
+
+    -- 3. Actualizar el estado de la orden de compra
+    IF p_estado = 'COMPLETADA' THEN
+        UPDATE orden_compra SET estado = 'COMPLETADA' WHERE id_orden = p_id_orden;
+    ELSE
+        UPDATE orden_compra SET estado = 'PARCIAL' WHERE id_orden = p_id_orden;
+    END IF;
+
+    COMMIT;
+    SELECT CONCAT('Recepción registrada exitosamente. ID: ', v_id_recepcion) AS mensaje;
+END$$
+
+-- 6. Creación de Triggers
+
+-- Trigger que registra en la tabla de auditoría cada vez que se inserta un movimiento de inventario
+CREATE TRIGGER tr_after_movimiento_insert
+AFTER INSERT ON movimiento_inventario
+FOR EACH ROW
+BEGIN
+    DECLARE v_codigo_articulo VARCHAR(20);
+    DECLARE v_nombre_articulo VARCHAR(100);
+
+    SELECT codigo, nombre INTO v_codigo_articulo, v_nombre_articulo
+    FROM articulo WHERE id_articulo = NEW.articulo_id;
+
+    INSERT INTO auditoria (id_usuario, tabla_afectada, accion, registro_afectado, valores_nuevos)
+    VALUES (
+        NEW.id_usuario,
+        'movimiento_inventario',
+        'INSERT',
+        NEW.id_movimiento,
+        CONCAT(
+            'Artículo: ', COALESCE(v_codigo_articulo, 'N/A'), ' - ', COALESCE(v_nombre_articulo, 'N/A'),
+            ', Tipo: ', NEW.tipo_movimiento,
+            ', Cantidad: ', NEW.cantidad,
+            ', Stock Anterior: ', NEW.stock_anterior,
+            ', Stock Actual: ', NEW.stock_actual,
+            ', Ref: ', COALESCE(NEW.referencia, 'N/A')
+        )
+    );
+END$$
+
+-- Trigger que registra en la tabla de auditoría cada vez que se actualiza el stock de un artículo
+CREATE TRIGGER tr_after_articulo_update
+AFTER UPDATE ON articulo
+FOR EACH ROW
+BEGIN
+    IF OLD.stock <> NEW.stock THEN
+        INSERT INTO auditoria (
+            id_usuario,
+            tabla_afectada,
+            accion,
+            registro_afectado,
+            valores_anteriores,
+            valores_nuevos
+        ) VALUES (
+            NULL, -- Aquí podrías poner el id del usuario que realiza la operación si lo pasas al SP
+            'articulo',
+            'UPDATE',
+            NEW.id_articulo,
+            CONCAT('Stock Anterior: ', OLD.stock),
+            CONCAT('Stock Nuevo: ', NEW.stock)
+        );
+    END IF;
+END$$
+
+-- Trigger para actualizar el monto total de la orden de compra después de un INSERT en detalle_orden
+CREATE TRIGGER tr_after_detalle_orden_insert
+AFTER INSERT ON detalle_orden
+FOR EACH ROW
+BEGIN
+    DECLARE v_subtotal DECIMAL(12,2);
+    DECLARE v_igv DECIMAL(12,2);
+    DECLARE v_monto_total DECIMAL(12,2);
+
+    -- Calcular el subtotal de la orden
+    SELECT SUM(cantidad * precio_unitario) INTO v_subtotal FROM detalle_orden WHERE id_orden = NEW.id_orden;
+
+    -- Calcular IGV (18%) y monto total
+    SET v_igv = v_subtotal * 0.18;
+    SET v_monto_total = v_subtotal + v_igv;
+
+    -- Actualizar la tabla orden_compra
+    UPDATE orden_compra
+    SET
+        monto_total = v_monto_total,
+        igv = v_igv
+    WHERE id_orden = NEW.id_orden;
+END$$
+
+-- Trigger para actualizar el monto total de la orden de compra después de un UPDATE en detalle_orden
+CREATE TRIGGER tr_after_detalle_orden_update
+AFTER UPDATE ON detalle_orden
+FOR EACH ROW
+BEGIN
+    DECLARE v_subtotal DECIMAL(12,2);
+    DECLARE v_igv DECIMAL(12,2);
+    DECLARE v_monto_total DECIMAL(12,2);
+
+    -- Calcular el subtotal de la orden
+    SELECT SUM(cantidad * precio_unitario) INTO v_subtotal FROM detalle_orden WHERE id_orden = NEW.id_orden;
+
+    -- Calcular IGV (18%) y monto total
+    SET v_igv = v_subtotal * 0.18;
+    SET v_monto_total = v_subtotal + v_igv;
+
+    -- Actualizar la tabla orden_compra
+    UPDATE orden_compra
+    SET
+        monto_total = v_monto_total,
+        igv = v_igv
+    WHERE id_orden = NEW.id_orden;
+END$$
+
+-- Trigger para actualizar el monto total de la orden de compra después de un DELETE en detalle_orden
+CREATE TRIGGER tr_after_detalle_orden_delete
+AFTER DELETE ON detalle_orden
+FOR EACH ROW
+BEGIN
+    DECLARE v_subtotal DECIMAL(12,2);
+    DECLARE v_igv DECIMAL(12,2);
+    DECLARE v_monto_total DECIMAL(12,2);
+
+    -- Calcular el subtotal de la orden, usando COALESCE para manejar el caso de una orden sin detalles
+    SELECT COALESCE(SUM(cantidad * precio_unitario), 0) INTO v_subtotal FROM detalle_orden WHERE id_orden = OLD.id_orden;
+
+    -- Calcular IGV (18%) y monto total
+    SET v_igv = v_subtotal * 0.18;
+    SET v_monto_total = v_subtotal + v_igv;
+
+    -- Actualizar la tabla orden_compra
+    UPDATE orden_compra
+    SET
+        monto_total = v_monto_total,
+        igv = v_igv
+    WHERE id_orden = OLD.id_orden;
+END$$
+
+-- 7. Creación de Eventos Programados
+
+-- Habilitar el programador de eventos (si no está habilitado)
+SET GLOBAL event_scheduler = ON;
+
+-- Evento que se ejecuta cada mes para limpiar la tabla de auditoría de registros antiguos
+CREATE EVENT ev_limpiar_auditoria
+ON SCHEDULE EVERY 1 MONTH
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    DELETE FROM auditoria
+    WHERE fecha < DATE_SUB(NOW(), INTERVAL 6 MONTH);
+END$$
+
+-- Evento que se ejecuta cada día para actualizar el estado de los presupuestos vencidos
+CREATE EVENT ev_actualizar_presupuestos
+ON SCHEDULE EVERY 1 DAY
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    UPDATE presupuesto_compras
+    SET estado = 'VENCIDO'
+    WHERE estado = 'Activo' AND fecha_fin < CURDATE();
+END$$
+
+DELIMITER ;
